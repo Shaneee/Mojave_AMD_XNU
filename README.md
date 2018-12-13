@@ -1,3 +1,4 @@
+<<<<<<< HEAD
 What is XNU?
 ===========
 
@@ -394,3 +395,9 @@ for detailed explanation of commands and their usage.
 [TN2118]: https://developer.apple.com/library/mac/technotes/tn2004/tn2118.html#//apple_ref/doc/uid/DTS10003352 "Kernel Core Dumps"
 [TN2063]: https://developer.apple.com/library/mac/technotes/tn2063/_index.html "Understanding and Debugging Kernel Panics"
 [Kernel Programming Guide]: https://developer.apple.com/library/mac/documentation/Darwin/Conceptual/KernelProgramming/build/build.html#//apple_ref/doc/uid/TP30000905-CH221-BABDGEGF
+=======
+# Mojave_AMD_XNU
+Running macOS Mojave on AMD CPUs
+
+Coming soon!
+>>>>>>> 6fcf8c3e87379b24e875ce79478bc5e711a8b7f9
