@@ -10263,6 +10263,21 @@ finish:
     IORecursiveLockUnlock(sKextLock);
     return(result);
 }
+    
+    //Apple didn't release this function in public release. We add it to fix the prelinkedkernel issue. https://twitter.com/panicaII/status/1049906905576087552
+    OSSymbol* IOSKCopyKextIdentifierWithAddress(vm_address_t address);
+    OSSymbol* IOSKCopyKextIdentifierWithAddress(vm_address_t address) {
+        OSSymbol* sym = NULL;
+        OSKext* kext = OSKext::lookupKextWithAddress(address);
+        if (kext) {
+            sym = (OSSymbol*)kext->getIdentifier();
+            if (sym) {
+                sym->retain();
+            }
+            kext->release();
+        }
+        return sym;
+    }
 
 #if PRAGMA_MARK
 #pragma mark Personalities (IOKit Drivers)
