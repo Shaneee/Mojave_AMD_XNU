@@ -1026,7 +1026,7 @@ x86_validate_topology(void)
      */
     nCPUs = topoParms.nPackages * topoParms.nLThreadsPerPackage;
     if (nCPUs != real_ncpus)
-	panic("x86_validate_topology() %d threads but %d registered from MADT",
+	kprintf("x86_validate_topology() %d threads but %d registered from MADT",
 	      nCPUs, real_ncpus);
 
     pkg = x86_pkgs;

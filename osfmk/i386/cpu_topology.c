@@ -135,7 +135,6 @@ cpu_topology_sort(int ncpus)
 		x86_set_logical_topology(&cpup->lcpu, cpup->cpu_phys_number, i);
 	}
 
-	cpu_shadow_sort(ncpus);
 	x86_validate_topology();
 
 	ml_set_interrupts_enabled(istate);
