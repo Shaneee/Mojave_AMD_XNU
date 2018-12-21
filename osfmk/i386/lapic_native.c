@@ -81,7 +81,7 @@ static uint64_t lapic_last_master_error = 0;
 static uint64_t lapic_error_time_threshold = 0;
 static unsigned lapic_master_error_count = 0;
 static unsigned lapic_error_count_threshold = 5;
-static boolean_t lapic_dont_panic = FALSE;
+static boolean_t lapic_dont_panic = TRUE;
 
 #ifdef MP_DEBUG
 void
@@ -277,11 +277,13 @@ lapic_init(void)
 
 	LAPIC_INIT();
 
-	kprintf("ID: 0x%x LDR: 0x%x\n", LAPIC_READ(ID), LAPIC_READ(LDR));
-	if ((LAPIC_READ(VERSION)&LAPIC_VERSION_MASK) < 0x14) {
-		panic("Local APIC version 0x%x, 0x14 or more expected\n",
-			(LAPIC_READ(VERSION)&LAPIC_VERSION_MASK));
-	}
+    kprintf("ID: 0x%x LDR: 0x%x\n", LAPIC_READ(ID), LAPIC_READ(LDR));
+    /* Changed by bronzovka from < 0x14 to fix panic on some AMDs.
+     R:A:W:X86 made panic to printf to avoid potential - might be unnecessary. */
+    if ((LAPIC_READ(VERSION)&LAPIC_VERSION_MASK) < 0x10) {
+        printf("Local APIC version 0x%x, 0x10 or more expected\n",
+               (LAPIC_READ(VERSION)&LAPIC_VERSION_MASK));
+    }
 
 	/* Set up the lapic_id <-> cpu_number map and add this boot processor */
 	lapic_cpu_map_init();
@@ -510,7 +512,7 @@ lapic_configure(void)
 	if (lapic_error_time_threshold == 0 && cpu_number() == 0) {
 		nanoseconds_to_absolutetime(NSEC_PER_SEC >> 2, &lapic_error_time_threshold);
 		if (!PE_parse_boot_argn("lapic_dont_panic", &lapic_dont_panic, sizeof(lapic_dont_panic))) {
-			lapic_dont_panic = FALSE;
+			lapic_dont_panic = TRUE;
 		}
 	}
 
@@ -523,9 +525,11 @@ lapic_configure(void)
 	if (get_cpu_number() == master_cpu) {
 		value = LAPIC_READ(LVT_LINT0);
 		value &= ~LAPIC_LVT_MASKED;
-		value |= LAPIC_LVT_DM_EXTINT;
-		LAPIC_WRITE(LVT_LINT0, value);
-	}
+        value |= LAPIC_LVT_DM_EXTINT;
+        LAPIC_WRITE(LVT_LINT0, value);
+    }
+    else
+        LAPIC_WRITE(LVT_LINT0, LAPIC_LVT_DM_EXTINT | LAPIC_LVT_MASKED);
 
 	/* Timer: unmasked, one-shot */
 	LAPIC_WRITE(LVT_TIMER, LAPIC_VECTOR(TIMER));
@@ -768,35 +772,39 @@ lapic_interrupt(int interrupt_num, x86_saved_state_t *state)
 		 * vector code is one observed in practice) indicates
 		 * the immediate cause of the error.
 		 */
-		esr = lapic_esr_read();
-		lapic_dump();
-
-		if ((debug_boot_arg && (lapic_dont_panic == FALSE)) ||
-			cpu_number() != master_cpu) {
-			panic("Local APIC error, ESR: %d\n", esr);
-		}
-
-		if (cpu_number() == master_cpu) {
-			uint64_t abstime = mach_absolute_time();
-			if ((abstime - lapic_last_master_error) < lapic_error_time_threshold) {
-				if (lapic_master_error_count++ > lapic_error_count_threshold) {
-					lapic_errors_masked = TRUE;
-					LAPIC_WRITE(LVT_ERROR, LAPIC_READ(LVT_ERROR) | LAPIC_LVT_MASKED);
-					printf("Local APIC: errors masked\n");
-				}
-			}
-			else {
-				lapic_last_master_error = abstime;
-				lapic_master_error_count = 0;
-			}
-			printf("Local APIC error on master CPU, ESR: %d, error count this run: %d\n", esr, lapic_master_error_count);
-		}
-
-		_lapic_end_of_interrupt();
-		retval = 1;
-		break;
-	case LAPIC_SPURIOUS_INTERRUPT:
-		kprintf("SPIV\n");
+            esr = lapic_esr_read();
+            lapic_dump();
+            
+            /* apocolipse LAPIC fix */
+            if (debug_boot_arg && (lapic_dont_panic == FALSE))
+            {
+                panic("Local APIC error, ESR: %d\n", esr);
+            } else {
+                if (cpu_number() != master_cpu)
+                    printf("Local APIC error, ESR: %d\n", esr);
+            }
+            
+            if (TRUE) {
+                uint64_t abstime = mach_absolute_time();
+                if ((abstime - lapic_last_master_error) < lapic_error_time_threshold) {
+                    if (lapic_master_error_count++ > lapic_error_count_threshold) {
+                        lapic_errors_masked = TRUE;
+                        LAPIC_WRITE(LVT_ERROR, LAPIC_READ(LVT_ERROR) | LAPIC_LVT_MASKED);
+                        printf("Local APIC: errors masked\n");
+                    }
+                }
+                else {
+                    lapic_last_master_error = abstime;
+                    lapic_master_error_count = 0;
+                }
+                printf("Local APIC error on master CPU, ESR: %d, error count this run: %d\n", esr, lapic_master_error_count);
+            }
+            
+            _lapic_end_of_interrupt();
+            retval = 1;
+            break;
+        case LAPIC_SPURIOUS_INTERRUPT:
+            kprintf("SPIV\n");
 		/* No EOI required here */
 		retval = 1;
 		break;
