@@ -4817,6 +4817,32 @@ necp_client_copy_client_update(struct necp_fd_data *fd_data, struct necp_client_
 }
 
 static int
+necp_client_add_flow(struct necp_fd_data *fd_data, struct necp_client_action_args *uap, int *retval)
+{
+	// FIXME - this is only a stub function, replace when Apple fixes it ~Foxlet
+	int error = 0;
+	struct necp_client_add_flow *flow = NULL;
+	uuid_t client_id;
+
+	if (uap->client_id == 0 || uap->client_id_len != sizeof(uuid_t)) {
+		error = EINVAL;
+		goto done;
+	}
+
+	error = copyin(uap->client_id, client_id, sizeof(uuid_t));
+	if (error) {
+		NECPLOG(LOG_ERR, "necp_client_add_flow copyin client_id error (%d)", error);
+		goto done;
+	}
+
+	goto done;
+
+done:
+	*retval = error;
+	return (error);
+}
+
+static int
 necp_client_copy_parameters_locked(struct necp_client *client,
 								   struct necp_client_nexus_parameters *parameters)
 {
@@ -5526,6 +5552,11 @@ necp_client_action(struct proc *p, struct necp_client_action_args *uap, int *ret
 		}
 		case NECP_CLIENT_ACTION_COPY_CLIENT_UPDATE: {
 			return_value = necp_client_copy_client_update(fd_data, uap, retval);
+			break;
+		}
+		case NECP_CLIENT_ACTION_ADD_FLOW: {
+			// THIS IS A STUB FUNCTION - PLS FIX ~Foxlet
+		 	return_value = necp_client_add_flow(fd_data, uap, retval);
 			break;
 		}
 		default: {
