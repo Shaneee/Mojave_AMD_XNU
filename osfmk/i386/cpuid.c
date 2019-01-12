@@ -965,6 +965,128 @@ cpuid_set_cache_info( i386_cpu_info_t * info_p )
     DBG("\n");
 }
 
+static void init_amd_erratas(i386_cpu_info_t *info_p)
+{
+    uint64_t msr;
+    
+    /*
+     * Work around Erratum 721 for Family 10h and 12h processors.
+     * These processors may incorrectly update the stack pointer
+     * after a long series of push and/or near-call instructions,
+     * or a long series of pop and/or near-return instructions.
+     *
+     * http://support.amd.com/us/Processor_TechDocs/41322_10h_Rev_Gd.pdf
+     * http://support.amd.com/us/Processor_TechDocs/44739_12h_Rev_Gd.pdf
+     *
+     * Hypervisors do not provide access to the errata MSR,
+     * causing #GP exception on attempt to apply the errata.  The
+     * MSR write shall be done on host and persist globally
+     * anyway, so do not try to do it when under virtualization.
+     */
+    
+    switch (info_p->cpuid_family) {
+        case 0x10:
+        case 0x12:
+            if ((info_p->cpuid_features & 0x80000000) == 0)
+                wrmsr64(0xc0011029, rdmsr64(0xc0011029) | 1);
+            break;
+    }
+    
+    /*
+     * BIOS may fail to set InitApicIdCpuIdLo to 1 as it should per BKDG.
+     * So, do it here or otherwise some tools could be confused by
+     * Initial Local APIC ID reported with CPUID Function 1 in EBX.
+     */
+    if (info_p->cpuid_family == 0x10) {
+        if ((info_p->cpuid_features & 0x80000000) == 0) {
+            msr = rdmsr64(0xc001001f);
+            msr |= (uint64_t)1 << 54;
+            wrmsr64(0xc001001f, msr);
+        }
+    }
+    
+    /*
+     * BIOS may configure Family 10h processors to convert WC+ cache type
+     * to CD.  That can hurt performance of guest VMs using nested paging.
+     * The relevant MSR bit is not documented in the BKDG,
+     * the fix is borrowed from Linux.
+     */
+    if (info_p->cpuid_family == 0x10) {
+        if ((info_p->cpuid_features & 0x80000000) == 0) {
+            msr = rdmsr64(0xc001102a);
+            msr &= ~((uint64_t)1 << 24);
+            wrmsr64(0xc001102a, msr);
+        }
+    }
+    
+    /*
+     * Work around Erratum 793: Specific Combination of Writes to Write
+     * Combined Memory Types and Locked Instructions May Cause Core Hang.
+     * See Revision Guide for AMD Family 16h Models 00h-0Fh Processors,
+     * revision 3.04 or later, publication 51810.
+     */
+    if (info_p->cpuid_family== 0x16 && info_p->cpuid_model <= 0xf) {
+        if ((info_p->cpuid_features & 0x80000000) == 0) {
+            msr = rdmsr64(0xc0011020);
+            msr |= (uint64_t)1 << 15;
+            wrmsr64(0xc0011020, msr);
+        }
+    }
+    
+    /* Ryzen erratas. */
+    if (info_p->cpuid_family == 0x17 && info_p->cpuid_model == 0x1 &&
+        (info_p->cpuid_features & 0x80000000) == 0) {
+        /* 1021 */
+        msr = rdmsr64(0xc0011029);
+        msr |= 0x2000;
+        wrmsr64(0xc0011029, msr);
+        
+        /* 1033 */
+        msr = rdmsr64(0xc0011020);
+        msr |= 0x10;
+        wrmsr64(0xc0011020, msr);
+        
+        /* 1049 */
+        msr = rdmsr64(0xc0011028);
+        msr |= 0x10;
+        wrmsr64(0xc0011028, msr);
+        
+        /* 1095 */
+        msr = rdmsr64(0xc0011020);
+        msr |= 0x200000000000000;
+        wrmsr64(0xc0011020, msr);
+    }
+    
+    /*
+     * Work around a problem on Ryzen that is triggered by executing
+     * code near the top of user memory, in our case the signal
+     * trampoline code in the shared page on amd64.
+     *
+     * This function is executed once for the BSP before tunables take
+     * effect so the value determined here can be overridden by the
+     * tunable.  This function is then executed again for each AP and
+     * also on resume.  Set a flag the first time so that value set by
+     * the tunable is not overwritten.
+     *
+     * The stepping and/or microcode versions should be checked after
+     * this issue is fixed by AMD so that we don't use this mode if not
+     * needed.
+     */
+    /*if (lower_sharedpage_init == 0) {
+        lower_sharedpage_init = 1;
+        if (info_p->cpuid_family == 0x17) {
+            hw_lower_amd64_sharedpage = 1;
+        }
+    }
+     amd64_lower_shared_page(struct sysentvec *sv)
+    if (hw_lower_amd64_sharedpage != 0) {
+                sv->sv_maxuser -= PAGE_SIZE;
+                sv->sv_shared_page_base -= PAGE_SIZE;
+                sv->sv_usrstack -= PAGE_SIZE;
+                sv->sv_psstrings -= PAGE_SIZE;
+            }*/
+}
+
 static void
 cpuid_set_generic_info(i386_cpu_info_t *info_p)
 {
@@ -1074,6 +1196,7 @@ cpuid_set_generic_info(i386_cpu_info_t *info_p)
     } else {
         cpuid_fn(1, reg);
         info_p->cpuid_microcode_version = 186;
+        init_amd_erratas(info_p);
     }
     
     info_p->cpuid_signature = reg[eax];
